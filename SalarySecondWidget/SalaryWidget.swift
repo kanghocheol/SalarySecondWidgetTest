@@ -31,6 +31,18 @@ struct SalaryTimelineProvider: TimelineProvider {
 struct SalaryTickerWidgetView: View {
     let entry: SalaryEntry
     let shortMode: Bool
+
+    init() {
+        self.kind = "salary.custom.15m"
+        self.seconds = 900
+        self.shortMode = false
+    }
+
+    init(kind: String, seconds: TimeInterval, shortMode: Bool) {
+        self.kind = kind
+        self.seconds = seconds
+        self.shortMode = shortMode
+    }
     @Environment(\.widgetFamily) private var widgetFamily
 
     private var style: SalaryTickerStyle {
@@ -46,7 +58,7 @@ struct SalaryTickerWidgetView: View {
                 Text(.currentDate, format: style)
             } else if widgetFamily == .accessoryRectangular {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("?꾩쟻 ?섏엯 쨌 +5??珥?)
+                    Text("누적 수입 · +5원/초")
                         .font(.caption2)
                     Text(.currentDate, format: style)
                         .font(.headline)
@@ -57,7 +69,7 @@ struct SalaryTickerWidgetView: View {
             } else {
                 VStack(alignment: .leading, spacing: 7) {
                     HStack {
-                        Text(shortMode ? "?닿렐 ?뺤? ?ㅽ뿕" : "?ㅼ떆媛?湲됱뿬 ?ㅽ뿕")
+                        Text(shortMode ? "퇴근 정지 실험" : "실시간 급여 실험")
                             .font(.caption.bold())
                         Spacer(minLength: 1)
                         Image(systemName: "wonsign.circle.fill")
@@ -69,7 +81,7 @@ struct SalaryTickerWidgetView: View {
                         .minimumScaleFactor(0.55)
                         .lineLimit(1)
                         .monospacedDigit()
-                    Text("+5??珥?쨌 \(shortMode ? "60珥????뺤?" : "15遺????뺤?")")
+                    Text("+5원/초 · \(shortMode ? "60초 후 정지" : "15분 후 정지")")
                         .font(.caption2)
                         .foregroundStyle(.green)
                     // System timer control makes it easier to tell if the OS clock updates.
@@ -105,8 +117,8 @@ struct SalaryTickerWidget: Widget {
         StaticConfiguration(kind: kind, provider: SalaryTimelineProvider(duration: seconds)) { entry in
             SalaryTickerWidgetView(entry: entry, shortMode: shortMode)
         }
-        .configurationDisplayName(shortMode ? "湲됱뿬 1遺??닿렐" : "湲됱뿬 15遺?)
-        .description(shortMode ? "1珥덈쭏??5??利앷? ??1遺꾩뿉 ?뺤??섎뒗吏 ?뚯뒪?? : "1珥덈쭏??5??利앷??섎뒗吏 ?뚯뒪??)
+        .configurationDisplayName(shortMode ? "급여 1분 퇴근" : "급여 15분")
+        .description(shortMode ? "1초마다 5원 증가 후 1분에 정지하는지 테스트" : "1초마다 5원 증가하는지 테스트")
         .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryInline])
     }
 }
@@ -121,13 +133,13 @@ struct NativeTimerWidgetView: View {
                 Text(entry.start, style: .timer)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("?쒖뒪??湲곕낯 ??대㉧")
+                    Text("시스템 기본 타이머")
                         .font(.caption)
                     Text(entry.start, style: .timer)
                         .font(.system(size: 26, weight: .bold, design: .rounded))
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
-                    Text("而ㅼ뒪? 湲덉븸 ?꾩젽怨?鍮꾧탳")
+                    Text("커스텀 금액 위젯과 비교")
                         .font(.caption2)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -142,8 +154,8 @@ struct NativeTimerWidget: Widget {
         StaticConfiguration(kind: "native.timer.control", provider: SalaryTimelineProvider(duration: 3600)) { entry in
             NativeTimerWidgetView(entry: entry)
         }
-        .configurationDisplayName("湲곕낯 ??대㉧ ?議곌뎔")
-        .description("Apple??吏곸젒 媛깆떊?섎뒗 湲곕낯 ??대㉧")
+        .configurationDisplayName("기본 타이머 대조군")
+        .description("Apple이 직접 갱신하는 기본 타이머")
         .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryInline])
     }
 }
