@@ -31,18 +31,6 @@ struct SalaryTimelineProvider: TimelineProvider {
 struct SalaryTickerWidgetView: View {
     let entry: SalaryEntry
     let shortMode: Bool
-
-    init() {
-        self.kind = "salary.custom.15m"
-        self.seconds = 900
-        self.shortMode = false
-    }
-
-    init(kind: String, seconds: TimeInterval, shortMode: Bool) {
-        self.kind = kind
-        self.seconds = seconds
-        self.shortMode = shortMode
-    }
     @Environment(\.widgetFamily) private var widgetFamily
 
     private var style: SalaryTickerStyle {
