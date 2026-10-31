@@ -33,49 +33,49 @@ struct SalaryTickerWidgetView: View {
     let shortMode: Bool
     @Environment(\.widgetFamily) private var widgetFamily
 
-    private var style: SalaryTickerStyle {
-        SalaryTickerStyle(start: entry.start,
-                          end: entry.end,
-                          initialWon: 10_000,
-                          wonPerSecond: 5)
-    }
-
+    // Diagnostic A/B test: render ordinary text, not a custom DiscreteFormatStyle.
+    // The only moving value in this widget is the system-supported timer.
     var body: some View {
         Group {
             if widgetFamily == .accessoryInline {
-                Text(.currentDate, format: style)
+                Text("₩10,000 · 고정 금액")
             } else if widgetFamily == .accessoryRectangular {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("누적 수입 · +5원/초")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("급여 표시 테스트")
                         .font(.caption2)
-                    Text(.currentDate, format: style)
-                        .font(.headline)
-                        .minimumScaleFactor(0.5)
-                        .lineLimit(1)
+                    HStack(spacing: 8) {
+                        Text("₩10,000")
+                            .font(.headline)
+                        Text(entry.start, style: .timer)
+                            .font(.caption)
+                            .monospacedDigit()
+                    }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 VStack(alignment: .leading, spacing: 7) {
                     HStack {
-                        Text(shortMode ? "퇴근 정지 실험" : "실시간 급여 실험")
+                        Text("금액 + 타이머 표시 테스트")
                             .font(.caption.bold())
                         Spacer(minLength: 1)
                         Image(systemName: "wonsign.circle.fill")
                             .foregroundStyle(.green)
                     }
-                    Text(.currentDate, format: style)
+                    Text("₩10,000")
                         .font(.system(size: widgetFamily == .systemMedium ? 30 : 23,
                                       weight: .bold, design: .rounded))
-                        .minimumScaleFactor(0.55)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.55)
                         .monospacedDigit()
-                    Text("+5원/초 · \(shortMode ? "60초 후 정지" : "15분 후 정지")")
-                        .font(.caption2)
-                        .foregroundStyle(.green)
-                    // System timer control makes it easier to tell if the OS clock updates.
-                    Text(entry.start, style: .timer)
+                    Text("금액 고정 · 아래 타이머만 증가")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                    Text(entry.start, style: .timer)
+                        .font(.headline)
+                        .monospacedDigit()
+                        .foregroundStyle(.green)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
@@ -105,8 +105,8 @@ struct SalaryTickerWidget: Widget {
         StaticConfiguration(kind: kind, provider: SalaryTimelineProvider(duration: seconds)) { entry in
             SalaryTickerWidgetView(entry: entry, shortMode: shortMode)
         }
-        .configurationDisplayName(shortMode ? "급여 1분 퇴근" : "급여 15분")
-        .description(shortMode ? "1초마다 5원 증가 후 1분에 정지하는지 테스트" : "1초마다 5원 증가하는지 테스트")
+        .configurationDisplayName(shortMode ? "고정금액+타이머 (1분)" : "고정금액+타이머 (15분)")
+        .description("금액이 정상 표시되는지 확인하고 Apple 기본 타이머가 1초마다 변하는지 비교합니다.")
         .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryInline])
     }
 }
