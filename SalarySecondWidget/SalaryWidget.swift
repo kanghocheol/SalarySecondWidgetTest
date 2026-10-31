@@ -148,11 +148,98 @@ struct NativeTimerWidget: Widget {
     }
 }
 
+
+// Independent experiment: ordinary money text changed through one-second timeline entries.
+// IMPORTANT: WidgetKit may skip/delay these entries. This is a diagnostic, not a guarantee.
+struct SecondMoneyEntry: TimelineEntry {
+    let date: Date
+    let start: Date
+    let won: Int
+}
+
+struct SecondMoneyProvider: TimelineProvider {
+    func placeholder(in context: Context) -> SecondMoneyEntry {
+        let now = Date()
+        return SecondMoneyEntry(date: now, start: now, won: 10_000)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (SecondMoneyEntry) -> Void) {
+        completion(placeholder(in: context))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<SecondMoneyEntry>) -> Void) {
+        let start = Date()
+        let entries = (0...60).map { second in
+            SecondMoneyEntry(
+                date: start.addingTimeInterval(TimeInterval(second)),
+                start: start,
+                won: 10_000 + second * 5
+            )
+        }
+        // After 60 seconds it stops at the final amount unless WidgetKit re-requests a timeline.
+        completion(Timeline(entries: entries, policy: .never))
+    }
+}
+
+struct SecondMoneyWidgetView: View {
+    let entry: SecondMoneyEntry
+    @Environment(\.widgetFamily) private var widgetFamily
+
+    var body: some View {
+        Group {
+            if widgetFamily == .accessoryRectangular {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("1초 금액 타임라인")
+                        .font(.caption2)
+                    Text("₩\(entry.won.formatted())")
+                        .font(.headline)
+                        .monospacedDigit()
+                    Text(entry.start, style: .timer)
+                        .font(.caption2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("1초 금액 타임라인 실험")
+                        .font(.caption.bold())
+                    Text("₩\(entry.won.formatted())")
+                        .font(.system(size: widgetFamily == .systemMedium ? 30 : 23,
+                                      weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    Text("목표: 1초마다 +5원 (60초간)")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                    Text(entry.start, style: .timer)
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+
+struct SecondMoneyWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "salary.second.timeline.experiment", provider: SecondMoneyProvider()) { entry in
+            SecondMoneyWidgetView(entry: entry)
+        }
+        .configurationDisplayName("1초 금액 타임라인 실험")
+        .description("60초 동안 1초마다 금액 변경을 요청합니다. iOS가 실제 갱신을 보장하지 않습니다.")
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular])
+    }
+}
+
 @main
 struct SalaryWidgetBundle: WidgetBundle {
     var body: some Widget {
         SalaryTickerWidget(kind: "salary.custom.15m", seconds: 900, shortMode: false)
         SalaryTickerWidget(kind: "salary.custom.1m", seconds: 60, shortMode: true)
         NativeTimerWidget()
+        SecondMoneyWidget()
     }
 }
