@@ -604,9 +604,67 @@ struct ManualSalaryWidget: Widget {
     }
 }
 
+// Separate Lock Screen-only test with a NEW WidgetKit kind.
+// Existing home screen and manual-sync widget are intentionally unchanged.
+// This simple, read-only preview isolates gallery discovery/rendering from AppIntent buttons.
+struct LockOnlySalaryView: View {
+    let entry: ManualSalaryEntry
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        Group {
+            switch family {
+            case .accessoryInline:
+                Text("급여 ₩\(entry.won.formatted())")
+                    .lineLimit(1)
+
+            case .accessoryCircular:
+                VStack(spacing: 1) {
+                    Image(systemName: "wonsign.circle")
+                        .font(.caption2)
+                    Text(entry.won.formatted(.number.notation(.compactName)))
+                        .font(.caption.bold())
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            default:
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("누적 급여")
+                        .font(.caption2)
+                    Text("₩\(entry.won.formatted())")
+                        .font(.headline)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                    Text(entry.start, style: .timer)
+                        .font(.caption2)
+                        .monospacedDigit()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }
+        }
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+
+struct LockOnlySalaryWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "salary.lock.only.test.v1", provider: ManualSalaryProvider()) { entry in
+            LockOnlySalaryView(entry: entry)
+        }
+        .configurationDisplayName("잠금화면 급여 테스트")
+        .description("잠금 화면에서 누적 금액과 근무 시간을 표시합니다. 갱신 버튼은 홈 화면 실험에서 사용합니다.")
+        .supportedFamilies([.accessoryRectangular, .accessoryCircular, .accessoryInline])
+    }
+}
+
 @main
 struct SalaryWidgetBundle: WidgetBundle {
     var body: some Widget {
+        LockOnlySalaryWidget()
         SalaryTickerWidget(kind: "salary.custom.15m", seconds: 900, shortMode: false)
         SalaryTickerWidget(kind: "salary.custom.1m", seconds: 60, shortMode: true)
         NativeTimerWidget()
