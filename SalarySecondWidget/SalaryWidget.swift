@@ -471,68 +471,123 @@ struct ManualSalaryProvider: TimelineProvider {
     }
 }
 
+// Each supported family needs its own layout. Home Screen widgets use
+// systemSmall/systemMedium; iPhone Lock Screen uses accessory families.
 struct ManualSalaryWidgetView: View {
     let entry: ManualSalaryEntry
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 5) {
-                Text("금액 복구 · 동기화 테스트")
-                    .font(.caption.bold())
+        Group {
+            switch family {
+            case .accessoryInline:
+                // Single-line slot above the Lock Screen clock.
+                Text("누적 급여 ₩\(entry.won.formatted())")
                     .lineLimit(1)
-                    .minimumScaleFactor(0.65)
-                Spacer(minLength: 0)
-                Image(systemName: "arrow.clockwise.circle.fill")
-                    .foregroundStyle(.green)
-            }
 
-            Text("₩\(entry.won.formatted())")
-                .font(.system(size: family == .systemMedium ? 31 : 24,
-                              weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.55)
-
-            HStack(spacing: 5) {
-                Text("실제 경과:")
-                Text(entry.start, style: .timer)
-                    .monospacedDigit()
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-
-            HStack(spacing: 4) {
-                Text("금액 기준:")
-                Text(entry.date, format: .dateTime.hour().minute().second())
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-
-            HStack(spacing: 6) {
-                Button(intent: SyncManualSalaryIntent()) {
-                    Label("현재 금액 동기화", systemImage: "arrow.clockwise")
+            case .accessoryCircular:
+                // The circle is narrow: use the system's compact number style.
+                VStack(spacing: 1) {
+                    Image(systemName: "wonsign.circle.fill")
+                        .font(.caption2)
+                    Text("₩\(entry.won.formatted(.number.notation(.compactName)))")
+                        .font(.caption.bold())
+                        .monospacedDigit()
                         .lineLimit(1)
-                        .minimumScaleFactor(0.6)
+                        .minimumScaleFactor(0.55)
                 }
-                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                if family == .systemMedium {
-                    Button(intent: ResetManualSalaryIntent()) {
-                        Label("처음부터", systemImage: "arrow.counterclockwise")
+            case .accessoryRectangular:
+                // A compact Lock Screen layout: amount, elapsed timer, sync.
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text("누적 급여")
+                            .font(.caption2)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        Button(intent: SyncManualSalaryIntent()) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("현재 금액 동기화")
                     }
-                    .buttonStyle(.bordered)
+                    Text("₩\(entry.won.formatted())")
+                        .font(.headline)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock")
+                        Text(entry.start, style: .timer)
+                            .monospacedDigit()
+                    }
+                    .font(.caption2)
                 }
-            }
-            .font(.caption2)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
-            if family == .systemMedium, let lastSynced = entry.lastSynced {
-                Text("마지막 버튼 실행: \(lastSynced, format: .dateTime.hour().minute().second())")
+            default:
+                // Keep the existing, working Home Screen widget unchanged.
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 5) {
+                        Text("금액 복구 · 동기화 테스트")
+                            .font(.caption.bold())
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.clockwise.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+
+                    Text("₩\(entry.won.formatted())")
+                        .font(.system(size: family == .systemMedium ? 31 : 24,
+                                      weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.55)
+
+                    HStack(spacing: 5) {
+                        Text("실제 경과:")
+                        Text(entry.start, style: .timer)
+                            .monospacedDigit()
+                    }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+
+                    HStack(spacing: 4) {
+                        Text("금액 기준:")
+                        Text(entry.date, format: .dateTime.hour().minute().second())
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                    HStack(spacing: 6) {
+                        Button(intent: SyncManualSalaryIntent()) {
+                            Label("현재 금액 동기화", systemImage: "arrow.clockwise")
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                        }
+                        .buttonStyle(.bordered)
+
+                        if family == .systemMedium {
+                            Button(intent: ResetManualSalaryIntent()) {
+                                Label("처음부터", systemImage: "arrow.counterclockwise")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .font(.caption2)
+
+                    if family == .systemMedium, let lastSynced = entry.lastSynced {
+                        Text("마지막 버튼 실행: \(lastSynced, format: .dateTime.hour().minute().second())")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .containerBackground(.fill.tertiary, for: .widget)
     }
 }
@@ -544,7 +599,8 @@ struct ManualSalaryWidget: Widget {
         }
         .configurationDisplayName("금액 복구·동기화 실험")
         .description("시작 시각을 고정하고 버튼으로 현재 금액이 복구되는지 확인합니다.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium,
+                            .accessoryRectangular, .accessoryCircular, .accessoryInline])
     }
 }
 
