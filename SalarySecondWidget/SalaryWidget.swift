@@ -604,71 +604,170 @@ struct ManualSalaryWidget: Widget {
     }
 }
 
-// Separate Lock Screen-only test with a NEW WidgetKit kind.
-// Existing home screen and manual-sync widget are intentionally unchanged.
-// This simple, read-only preview isolates gallery discovery/rendering from AppIntent buttons.
-struct LockOnlySalaryView: View {
-    let entry: ManualSalaryEntry
+
+// Experiment 5: calculate money ONLY when WidgetKit asks for a new timeline.
+// No 1-second entries, no buttons, no App Group entitlement.
+// The persisted anchor belongs to the widget extension, not the containing app.
+// On an OS-approved reload, the salary is recomputed from absolute elapsed time.
+private enum AutomaticReloadSalaryClock {
+    static let startKey = "salary.autoreload.start.v1"
+    static let initialWon = 10_000
+    static let wonPerSecond = 5
+
+    static func persistedStart() -> Date {
+        let defaults = UserDefaults.standard
+        let epoch = defaults.double(forKey: startKey)
+        if epoch > 1_000_000_000 {
+            return Date(timeIntervalSince1970: epoch)
+        }
+        let now = Date()
+        defaults.set(now.timeIntervalSince1970, forKey: startKey)
+        return now
+    }
+
+    static func amount(at now: Date, since start: Date) -> Int {
+        let seconds = max(0, Int(floor(now.timeIntervalSince(start))))
+        return initialWon + seconds * wonPerSecond
+    }
+}
+
+struct AutomaticReloadSalaryEntry: TimelineEntry {
+    let date: Date
+    let start: Date
+    let amount: Int
+    let calculatedAt: Date
+}
+
+struct AutomaticReloadSalaryProvider: TimelineProvider {
+    func placeholder(in context: Context) -> AutomaticReloadSalaryEntry {
+        let now = Date()
+        return AutomaticReloadSalaryEntry(date: now, start: now,
+                                          amount: 10_000, calculatedAt: now)
+    }
+
+    func getSnapshot(in context: Context,
+                     completion: @escaping (AutomaticReloadSalaryEntry) -> Void) {
+        let now = Date()
+        let start = AutomaticReloadSalaryClock.persistedStart()
+        completion(AutomaticReloadSalaryEntry(
+            date: now, start: start,
+            amount: AutomaticReloadSalaryClock.amount(at: now, since: start),
+            calculatedAt: now
+        ))
+    }
+
+    func getTimeline(in context: Context,
+                     completion: @escaping (Timeline<AutomaticReloadSalaryEntry>) -> Void) {
+        let now = Date()
+        let start = AutomaticReloadSalaryClock.persistedStart()
+        let entry = AutomaticReloadSalaryEntry(
+            date: now, start: start,
+            amount: AutomaticReloadSalaryClock.amount(at: now, since: start),
+            calculatedAt: now
+        )
+        // Requests another timeline no earlier than 5 minutes from now.
+        // iOS may defer the request significantly; waking the screen does
+        // NOT guarantee a new getTimeline() call.
+        completion(Timeline(entries: [entry],
+                            policy: .after(now.addingTimeInterval(300))))
+    }
+}
+
+struct AutomaticReloadSalaryView: View {
+    let entry: AutomaticReloadSalaryEntry
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
         Group {
             switch family {
             case .accessoryInline:
-                Text("급여 ₩\(entry.won.formatted())")
+                Text("급여 ₩\(entry.amount.formatted())")
                     .lineLimit(1)
-
             case .accessoryCircular:
-                VStack(spacing: 1) {
+                VStack(spacing: 2) {
                     Image(systemName: "wonsign.circle")
-                        .font(.caption2)
-                    Text(entry.won.formatted(.number.notation(.compactName)))
+                        .font(.caption)
+                    Text("₩\(entry.amount.formatted(.number.notation(.compactName)))")
                         .font(.caption.bold())
-                        .monospacedDigit()
+                        .minimumScaleFactor(0.5)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.6)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            default:
+            case .accessoryRectangular:
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("누적 급여")
+                    Text("자동 재로드 급여")
                         .font(.caption2)
-                    Text("₩\(entry.won.formatted())")
+                    Text("₩\(entry.amount.formatted())")
                         .font(.headline)
                         .monospacedDigit()
                         .lineLimit(1)
-                        .minimumScaleFactor(0.65)
-                    Text(entry.start, style: .timer)
-                        .font(.caption2)
-                        .monospacedDigit()
+                        .minimumScaleFactor(0.6)
+                    HStack(spacing: 4) {
+                        Text("경과")
+                        Text(entry.start, style: .timer)
+                            .monospacedDigit()
+                    }
+                    .font(.caption2)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            default:
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("자동 재로드 급여 실험")
+                            .font(.caption.bold())
+                        Spacer(minLength: 1)
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundStyle(.green)
+                    }
+                    Text("₩\(entry.amount.formatted())")
+                        .font(.system(size: family == .systemMedium ? 31 : 24,
+                                      weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.55)
+                    HStack(spacing: 5) {
+                        Text("실제 경과:")
+                        Text(entry.start, style: .timer)
+                            .monospacedDigit()
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    Text("금액 계산: \(entry.calculatedAt, format: .dateTime.hour().minute().second())")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("5분 후 재로드 요청 · 실제 시각은 iOS 결정")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                        .lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity,
+                       alignment: .leading)
             }
         }
         .containerBackground(.fill.tertiary, for: .widget)
     }
 }
 
-struct LockOnlySalaryWidget: Widget {
+struct AutomaticReloadSalaryWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "salary.lock.only.test.v1", provider: ManualSalaryProvider()) { entry in
-            LockOnlySalaryView(entry: entry)
+        StaticConfiguration(kind: "salary.automatic.reload.test.v1",
+                            provider: AutomaticReloadSalaryProvider()) { entry in
+            AutomaticReloadSalaryView(entry: entry)
         }
-        .configurationDisplayName("잠금화면 급여 테스트")
-        .description("잠금 화면에서 누적 금액과 근무 시간을 표시합니다. 갱신 버튼은 홈 화면 실험에서 사용합니다.")
-        .supportedFamilies([.accessoryRectangular, .accessoryCircular, .accessoryInline])
+        .configurationDisplayName("자동 재로드 급여 실험")
+        .description("iOS 재로드 시 실제 경과 시간으로 급여를 자동 재계산합니다. 버튼이 없습니다.")
+        .supportedFamilies([.systemSmall, .systemMedium,
+                            .accessoryInline, .accessoryCircular, .accessoryRectangular])
     }
 }
 
 @main
 struct SalaryWidgetBundle: WidgetBundle {
     var body: some Widget {
-        LockOnlySalaryWidget()
         SalaryTickerWidget(kind: "salary.custom.15m", seconds: 900, shortMode: false)
         SalaryTickerWidget(kind: "salary.custom.1m", seconds: 60, shortMode: true)
         NativeTimerWidget()
         SecondMoneyWidget()
         ManualSalaryWidget()
+        AutomaticReloadSalaryWidget()
     }
 }
