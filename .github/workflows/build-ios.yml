@@ -14,20 +14,30 @@ permissions:
 
 jobs:
   build:
-    # October 2026 GitHub Xcode 27 macOS runner.
     runs-on: xcode-27
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
+
       - name: Install XcodeGen
         run: brew install xcodegen
+
       - name: Generate Xcode project
         run: xcodegen generate
+
       - name: Check available schemes
         run: xcodebuild -list -project SalarySecondTest.xcodeproj
+
+      - name: Check salary calculation
+        run: |
+          set -euo pipefail
+          swiftc -parse-as-library Shared/SalaryTickerStyle.swift Tests/SalaryMathCheck.swift -o salary-math-check
+          ./salary-math-check
+
       - name: Build physical-device binary without signing
         run: |
-          set -o pipefail
+          set -euo pipefail
+          mkdir -p build
           xcodebuild \
             -project SalarySecondTest.xcodeproj \
             -scheme SalarySecondTest \
@@ -37,16 +47,29 @@ jobs:
             -derivedDataPath build/derived \
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee build/build.log
-      - name: Create unsigned IPA (NOT directly installable)
+
+      - name: Validate app and create unsigned IPA (NOT directly installable)
         run: |
+          set -euo pipefail
+          APP='build/derived/Build/Products/Release-iphoneos/SalarySecondTest.app'
+          EXT="$APP/PlugIns/SalarySecondWidgetExtension.appex"
+          test -f "$APP/SalarySecondTest"
+          test -f "$APP/Info.plist"
+          test -f "$EXT/SalarySecondWidgetExtension"
+          test -f "$EXT/Info.plist"
           mkdir -p Payload
-          cp -R build/derived/Build/Products/Release-iphoneos/SalarySecondTest.app Payload/
+          cp -R "$APP" Payload/
           /usr/bin/zip -q -r UnsignedSalarySecondTest.ipa Payload
-          test -d Payload/SalarySecondTest.app/PlugIns/SalarySecondWidgetExtension.appex
-      - name: Upload binary and logs
+          /usr/bin/unzip -tq UnsignedSalarySecondTest.ipa
+          /usr/bin/unzip -Z1 UnsignedSalarySecondTest.ipa | grep -Fx 'Payload/SalarySecondTest.app/PlugIns/SalarySecondWidgetExtension.appex/SalarySecondWidgetExtension'
+          echo 'IPA integrity and widget-extension inclusion verified.'
+
+      - name: Upload IPA and build logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: SalarySecondTest-unsigned-ipa
+          if-no-files-found: warn
           path: |
             UnsignedSalarySecondTest.ipa
             build/build.log
