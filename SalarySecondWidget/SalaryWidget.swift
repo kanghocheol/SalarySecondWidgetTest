@@ -1,5 +1,6 @@
 import SwiftUI
 import WidgetKit
+import Foundation
 
 struct SalaryEntry: TimelineEntry {
     let date: Date
@@ -234,6 +235,143 @@ struct SecondMoneyWidget: Widget {
     }
 }
 
+
+// Separate diagnostic: use SwiftUI's clock-driven Text initializer, NOT
+// a chain of 1-second WidgetKit timeline entries.
+// The anchor is persisted inside this widget extension, so its reference
+// time does not reset if WidgetKit requests a fresh timeline.
+private enum AutoSalaryTestClock {
+    static let key = "auto.salary.test.anchor.v1"
+
+    static func persistedStart() -> Date {
+        let store = UserDefaults.standard
+        let saved = store.double(forKey: key)
+        if saved > 1_000_000_000 {
+            return Date(timeIntervalSince1970: saved)
+        }
+        let now = Date()
+        store.set(now.timeIntervalSince1970, forKey: key)
+        return now
+    }
+}
+
+// Tiny, intentionally simple style: one integer number with no locale
+// formatting, currency symbol or animated subviews. The currency sign is
+// drawn separately so we can distinguish formatter/redaction failures.
+struct AutoSalaryFormatStyle: DiscreteFormatStyle {
+    let start: Date
+    let end: Date
+
+    func format(_ value: Date) -> String {
+        let elapsed = max(0.0, min(floor(value.timeIntervalSince(start)),
+                                   floor(end.timeIntervalSince(start))))
+        let amount = 10_000 + Int(elapsed) * 5
+        return String(amount)
+    }
+
+    func discreteInput(after input: Date) -> Date? {
+        if input < start { return start }
+        if input >= end { return nil }
+        let next = start.addingTimeInterval(floor(input.timeIntervalSince(start)) + 1.0)
+        return next <= end ? next : nil
+    }
+
+    func discreteInput(before input: Date) -> Date? {
+        if input <= start { return nil }
+        let elapsed = floor(min(input.timeIntervalSince(start),
+                                end.timeIntervalSince(start)))
+        if elapsed < 1 { return nil }
+        return start.addingTimeInterval(elapsed - 0.001)
+    }
+}
+
+struct AutoSalaryEntry: TimelineEntry {
+    let date: Date
+    let start: Date
+    let end: Date
+}
+
+struct AutoSalaryProvider: TimelineProvider {
+    private func entry(at now: Date) -> AutoSalaryEntry {
+        let start = AutoSalaryTestClock.persistedStart()
+        return AutoSalaryEntry(date: now, start: start,
+                               end: start.addingTimeInterval(3600))
+    }
+
+    func placeholder(in context: Context) -> AutoSalaryEntry {
+        let now = Date()
+        return AutoSalaryEntry(date: now, start: now,
+                               end: now.addingTimeInterval(3600))
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (AutoSalaryEntry) -> Void) {
+        completion(entry(at: Date()))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<AutoSalaryEntry>) -> Void) {
+        // A single entry. Only SwiftUI's time-driven Text can animate on its own.
+        // Do NOT request a reload every second.
+        let now = Date()
+        completion(Timeline(entries: [entry(at: now)], policy: .never))
+    }
+}
+
+struct AutoSalaryWidgetView: View {
+    let entry: AutoSalaryEntry
+    @Environment(\.widgetFamily) private var family
+
+    private var salaryStyle: AutoSalaryFormatStyle {
+        AutoSalaryFormatStyle(start: entry.start, end: entry.end)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("자동 금액 · 화면 복귀 테스트")
+                .font(.caption.bold())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            HStack(alignment: .firstTextBaseline, spacing: 1) {
+                Text("₩")
+                // This is the ONLY experimental automatically formatted value.
+                Text(.currentDate, format: salaryStyle)
+                    .monospacedDigit()
+            }
+            .font(.system(size: family == .systemMedium ? 31 : 24,
+                          weight: .bold, design: .rounded))
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
+
+            HStack(spacing: 6) {
+                Text("기본 타이머:")
+                Text(entry.start, style: .timer)
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            Text("시작 ₩10000 · 초당 +5원 · 최대 1시간")
+                .font(.caption2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .foregroundStyle(.green)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+
+struct AutoSalaryWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "salary.auto.clock.test.v1", provider: AutoSalaryProvider()) { entry in
+            AutoSalaryWidgetView(entry: entry)
+        }
+        .configurationDisplayName("자동 금액 화면 복귀 실험")
+        .description("기본 타이머와 사용자 정의 자동 갱신 금액을 비교합니다.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
 @main
 struct SalaryWidgetBundle: WidgetBundle {
     var body: some Widget {
@@ -241,5 +379,6 @@ struct SalaryWidgetBundle: WidgetBundle {
         SalaryTickerWidget(kind: "salary.custom.1m", seconds: 60, shortMode: true)
         NativeTimerWidget()
         SecondMoneyWidget()
+        AutoSalaryWidget()
     }
 }
