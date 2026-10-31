@@ -1,0 +1,52 @@
+name: Build iOS test app (unsigned)
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'SalarySecondTest/**'
+      - 'SalarySecondWidget/**'
+      - 'Shared/**'
+      - 'project.yml'
+      - '.github/workflows/build-ios.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # October 2026 GitHub Xcode 27 macOS runner.
+    runs-on: xcode-27
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Check available schemes
+        run: xcodebuild -list -project SalarySecondTest.xcodeproj
+      - name: Build physical-device binary without signing
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project SalarySecondTest.xcodeproj \
+            -scheme SalarySecondTest \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/derived \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee build/build.log
+      - name: Create unsigned IPA (NOT directly installable)
+        run: |
+          mkdir -p Payload
+          cp -R build/derived/Build/Products/Release-iphoneos/SalarySecondTest.app Payload/
+          /usr/bin/zip -q -r UnsignedSalarySecondTest.ipa Payload
+          test -d Payload/SalarySecondTest.app/PlugIns/SalarySecondWidgetExtension.appex
+      - name: Upload binary and logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: SalarySecondTest-unsigned-ipa
+          path: |
+            UnsignedSalarySecondTest.ipa
+            build/build.log

@@ -1,0 +1,44 @@
+name: SalarySecondTest
+options:
+  bundleIdPrefix: com.example
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  SalarySecondTest:
+    type: application
+    platform: iOS
+    sources:
+      - path: SalarySecondTest
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.salarysecondtest
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: "초당급여 실험"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+    dependencies:
+      - target: SalarySecondWidgetExtension
+        embed: true
+
+  SalarySecondWidgetExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: SalarySecondWidget
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.salarysecondtest.widget
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: SalarySecondWidget/Info.plist
+        SKIP_INSTALL: YES
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
