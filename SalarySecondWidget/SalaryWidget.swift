@@ -639,6 +639,7 @@ struct AutomaticReloadSalaryEntry: TimelineEntry {
 }
 
 struct AutomaticReloadSalaryProvider: TimelineProvider {
+    let reloadAfterSeconds: TimeInterval
     func placeholder(in context: Context) -> AutomaticReloadSalaryEntry {
         let now = Date()
         return AutomaticReloadSalaryEntry(date: now, start: now,
@@ -665,16 +666,21 @@ struct AutomaticReloadSalaryProvider: TimelineProvider {
             amount: AutomaticReloadSalaryClock.amount(at: now, since: start),
             calculatedAt: now
         )
-        // Requests another timeline no earlier than 5 minutes from now.
-        // iOS may defer the request significantly; waking the screen does
-        // NOT guarantee a new getTimeline() call.
+        // Experiment: ask WidgetKit to reload after 1 second, or 5 minutes
+        // for the comparison widget. This is a *request*, not a timer.
+        // WidgetKit may defer or ignore high-frequency requests due to budgets.
         completion(Timeline(entries: [entry],
-                            policy: .after(now.addingTimeInterval(300))))
+                            policy: .after(now.addingTimeInterval(reloadAfterSeconds))))
     }
 }
 
 struct AutomaticReloadSalaryView: View {
     let entry: AutomaticReloadSalaryEntry
+    let requestedIntervalSeconds: Int
+
+    private var intervalLabel: String {
+        requestedIntervalSeconds == 1 ? "1초" : "5분"
+    }
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
@@ -694,7 +700,7 @@ struct AutomaticReloadSalaryView: View {
                 }
             case .accessoryRectangular:
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("자동 재로드 급여")
+                    Text("\(intervalLabel) 재로드 급여")
                         .font(.caption2)
                     Text("₩\(entry.amount.formatted())")
                         .font(.headline)
@@ -712,7 +718,7 @@ struct AutomaticReloadSalaryView: View {
             default:
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("자동 재로드 급여 실험")
+                        Text("\(intervalLabel) 재로드 급여 실험")
                             .font(.caption.bold())
                         Spacer(minLength: 1)
                         Image(systemName: "clock.arrow.circlepath")
@@ -734,7 +740,7 @@ struct AutomaticReloadSalaryView: View {
                     Text("금액 계산: \(entry.calculatedAt, format: .dateTime.hour().minute().second())")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Text("5분 후 재로드 요청 · 실제 시각은 iOS 결정")
+                    Text("\(intervalLabel) 후 재로드 요청 · iOS가 시점 결정")
                         .font(.caption2)
                         .foregroundStyle(.green)
                         .lineLimit(2)
@@ -750,11 +756,26 @@ struct AutomaticReloadSalaryView: View {
 struct AutomaticReloadSalaryWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "salary.automatic.reload.test.v1",
-                            provider: AutomaticReloadSalaryProvider()) { entry in
-            AutomaticReloadSalaryView(entry: entry)
+                            provider: AutomaticReloadSalaryProvider(reloadAfterSeconds: 300)) { entry in
+            AutomaticReloadSalaryView(entry: entry, requestedIntervalSeconds: 300)
         }
         .configurationDisplayName("자동 재로드 급여 실험")
         .description("iOS 재로드 시 실제 경과 시간으로 급여를 자동 재계산합니다. 버튼이 없습니다.")
+        .supportedFamilies([.systemSmall, .systemMedium,
+                            .accessoryInline, .accessoryCircular, .accessoryRectangular])
+    }
+}
+
+// Dedicated A/B test: request a fresh timeline every second.
+// This is intentionally not a production refresh strategy.
+struct OneSecondReloadSalaryWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "salary.automatic.reload.1s.test.v1",
+                            provider: AutomaticReloadSalaryProvider(reloadAfterSeconds: 1)) { entry in
+            AutomaticReloadSalaryView(entry: entry, requestedIntervalSeconds: 1)
+        }
+        .configurationDisplayName("1초 재로드 급여 실험")
+        .description("1초마다 새 타임라인을 요청하지만, iOS가 실제 재로드 시각을 결정합니다.")
         .supportedFamilies([.systemSmall, .systemMedium,
                             .accessoryInline, .accessoryCircular, .accessoryRectangular])
     }
@@ -769,5 +790,6 @@ struct SalaryWidgetBundle: WidgetBundle {
         SecondMoneyWidget()
         ManualSalaryWidget()
         AutomaticReloadSalaryWidget()
+        OneSecondReloadSalaryWidget()
     }
 }
