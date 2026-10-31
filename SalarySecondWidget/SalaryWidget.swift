@@ -1,6 +1,7 @@
 import SwiftUI
 import WidgetKit
 import Foundation
+import AppIntents
 
 struct SalaryEntry: TimelineEntry {
     let date: Date
@@ -372,6 +373,181 @@ struct AutoSalaryWidget: Widget {
     }
 }
 
+// Experiment 4: an absolute-time salary timeline plus a genuine WidgetKit
+// interaction button. Unlike the previous experiment, the start time does
+// not reset when a new timeline is requested. Tapping the button triggers
+// an AppIntent and (per WidgetKit) a new timeline from the current time.
+// No App Group is needed for this isolated widget-only experiment.
+private enum ManualSalaryTestClock {
+    static let startKey = "salary.manual.test.start.v1"
+    static let syncedKey = "salary.manual.test.lastSynced.v1"
+    static let initialWon = 10_000
+    static let wonPerSecond = 5
+
+    static func persistedStart() -> Date {
+        let store = UserDefaults.standard
+        let timestamp = store.double(forKey: startKey)
+        if timestamp > 1_000_000_000 {
+            return Date(timeIntervalSince1970: timestamp)
+        }
+        let now = Date()
+        store.set(now.timeIntervalSince1970, forKey: startKey)
+        return now
+    }
+
+    static func amount(at moment: Date, from start: Date) -> Int {
+        let elapsed = max(0, Int(floor(moment.timeIntervalSince(start))))
+        return initialWon + elapsed * wonPerSecond
+    }
+}
+
+struct SyncManualSalaryIntent: AppIntent {
+    static var title: LocalizedStringResource = "현재 금액 동기화"
+    static var description = IntentDescription("저장된 시작 시각으로 현재 급여를 다시 계산합니다.")
+
+    func perform() async throws -> some IntentResult {
+        // A widget-button intent automatically reloads its timeline on return.
+        // Store a marker so the user can see that the intent actually ran.
+        UserDefaults.standard.set(Date().timeIntervalSince1970,
+                                  forKey: ManualSalaryTestClock.syncedKey)
+        return .result()
+    }
+}
+
+struct ResetManualSalaryIntent: AppIntent {
+    static var title: LocalizedStringResource = "테스트 시작 시각 초기화"
+    static var description = IntentDescription("급여 실험을 지금 시각부터 다시 시작합니다.")
+
+    func perform() async throws -> some IntentResult {
+        let now = Date().timeIntervalSince1970
+        UserDefaults.standard.set(now, forKey: ManualSalaryTestClock.startKey)
+        UserDefaults.standard.set(now, forKey: ManualSalaryTestClock.syncedKey)
+        return .result()
+    }
+}
+
+struct ManualSalaryEntry: TimelineEntry {
+    let date: Date
+    let start: Date
+    let won: Int
+    let lastSynced: Date?
+}
+
+struct ManualSalaryProvider: TimelineProvider {
+    func placeholder(in context: Context) -> ManualSalaryEntry {
+        let now = Date()
+        return ManualSalaryEntry(date: now, start: now,
+                                 won: ManualSalaryTestClock.initialWon,
+                                 lastSynced: nil)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (ManualSalaryEntry) -> Void) {
+        completion(placeholder(in: context))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<ManualSalaryEntry>) -> Void) {
+        let start = ManualSalaryTestClock.persistedStart()
+        let now = Date()
+        let syncEpoch = UserDefaults.standard.double(forKey: ManualSalaryTestClock.syncedKey)
+        let lastSynced = syncEpoch > 1_000_000_000
+            ? Date(timeIntervalSince1970: syncEpoch)
+            : nil
+
+        // 91 entries for a *short diagnostic only*, not a production strategy.
+        // Every amount comes from the *absolute, persisted* start, so a new
+        // timeline after a manual reload catches up rather than starting over.
+        let entries = (0...90).map { offset -> ManualSalaryEntry in
+            let moment = now.addingTimeInterval(TimeInterval(offset))
+            return ManualSalaryEntry(
+                date: moment,
+                start: start,
+                won: ManualSalaryTestClock.amount(at: moment, from: start),
+                lastSynced: lastSynced
+            )
+        }
+        // Allows the OS to request a new timeline, but never guarantees
+        // a refresh precisely after 90 seconds or when the screen wakes.
+        completion(Timeline(entries: entries, policy: .atEnd))
+    }
+}
+
+struct ManualSalaryWidgetView: View {
+    let entry: ManualSalaryEntry
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                Text("금액 복구 · 동기화 테스트")
+                    .font(.caption.bold())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.clockwise.circle.fill")
+                    .foregroundStyle(.green)
+            }
+
+            Text("₩\(entry.won.formatted())")
+                .font(.system(size: family == .systemMedium ? 31 : 24,
+                              weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+
+            HStack(spacing: 5) {
+                Text("실제 경과:")
+                Text(entry.start, style: .timer)
+                    .monospacedDigit()
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+
+            HStack(spacing: 4) {
+                Text("금액 기준:")
+                Text(entry.date, format: .dateTime.hour().minute().second())
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+
+            HStack(spacing: 6) {
+                Button(intent: SyncManualSalaryIntent()) {
+                    Label("현재 금액 동기화", systemImage: "arrow.clockwise")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                }
+                .buttonStyle(.bordered)
+
+                if family == .systemMedium {
+                    Button(intent: ResetManualSalaryIntent()) {
+                        Label("처음부터", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .font(.caption2)
+
+            if family == .systemMedium, let lastSynced = entry.lastSynced {
+                Text("마지막 버튼 실행: \(lastSynced, format: .dateTime.hour().minute().second())")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .containerBackground(.fill.tertiary, for: .widget)
+    }
+}
+
+struct ManualSalaryWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "salary.manual.sync.test.v1", provider: ManualSalaryProvider()) { entry in
+            ManualSalaryWidgetView(entry: entry)
+        }
+        .configurationDisplayName("금액 복구·동기화 실험")
+        .description("시작 시각을 고정하고 버튼으로 현재 금액이 복구되는지 확인합니다.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
 @main
 struct SalaryWidgetBundle: WidgetBundle {
     var body: some Widget {
@@ -379,6 +555,6 @@ struct SalaryWidgetBundle: WidgetBundle {
         SalaryTickerWidget(kind: "salary.custom.1m", seconds: 60, shortMode: true)
         NativeTimerWidget()
         SecondMoneyWidget()
-        AutoSalaryWidget()
+        ManualSalaryWidget()
     }
 }
